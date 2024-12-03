@@ -1,20 +1,83 @@
 import streamlit as st
 import pandas as pd
+import altair as alt
+import plotly.graph_objects as go
+import matplotlib.pyplot as plt
+import seaborn as sns
+import json
+import folium
+from streamlit_folium import st_folium
+from babel.numbers import format_currency
+from datetime import date
+
+
+def display_map(df):
+    # Menambahkan dropdown untuk memilih jenjang pendidikan
+    jenjang_options = ['SD', 'SMP', 'SMA', 'SMK']
+    selected_jenjang = st.selectbox("Pilih Jenjang Pendidikan:", jenjang_options)
+    
+    # Kolom yang relevan berdasarkan jenjang yang dipilih
+    jumlah_sekolah_column = f"Jumlah Sekolah {selected_jenjang}"
+    
+    if jumlah_sekolah_column not in df.columns:
+        st.error(f"Data untuk jenjang {selected_jenjang} tidak tersedia.")
+        return ""
+    
+    # Membuat peta dengan pusat Indonesia
+    map = folium.Map(location=[-6.1751, 106.8650], zoom_start=5, scrollWheelZoom=False, tiles='CartoDB positron')
+    
+    # Membaca GeoJSON dari file lokal
+    geojson_url = 'indonesia-edit.geojson'
+    df['PROVINSI'] = df['PROVINSI'].str.upper()
+
+    # Membuat Choropleth Map untuk peta Indonesia
+    choropleth = folium.Choropleth(
+        geo_data=geojson_url,
+        data=df,
+        columns=['PROVINSI', jumlah_sekolah_column],
+        key_on='feature.properties.state',
+        fill_color='YlOrRd',  # Ganti dengan palet warna lain
+        fill_opacity=0.7,
+        line_opacity=0.2,
+        legend_name=f"Jumlah Sekolah {selected_jenjang}"
+    )
+    choropleth.geojson.add_to(map)
+
+    # Menambahkan informasi tambahan pada setiap provinsi di GeoJSON
+    df_indexed = df.set_index('PROVINSI')  # Indeks menggunakan 'PROVINSI' untuk pencocokan
+    
+    for feature in choropleth.geojson.data['features']:
+        state_name = feature['properties']['state'].upper()  # Nama provinsi di GeoJSON
+        if state_name in df_indexed.index:
+            jumlah_sekolah = df_indexed.loc[state_name, jumlah_sekolah_column]
+            feature['properties']['population'] = f"Jumlah Sekolah {selected_jenjang}: {jumlah_sekolah}"
+
+    # Menambahkan tooltip pada GeoJSON untuk menampilkan informasi yang relevan
+    choropleth.geojson.add_child(
+        folium.features.GeoJsonTooltip(['state', 'population'], labels=False)  # Menggunakan 'state' dan 'population' sebagai tooltip
+    )
+
+    # Menampilkan peta di Streamlit
+    st_map = st_folium(map, width=700, height=450)
+
+    # Menangani interaksi dengan peta, seperti klik pada provinsi
+    state_name = ''
+    if st_map.get('last_active_drawing'):
+        state_name = st_map['last_active_drawing']['properties']['state']
+    
+    return state_name
+
 
 # Load data
 data = pd.read_csv('Dataset_APBN_2023.csv')
 
-# Sidebar
-st.sidebar.image("school.png", width=250)  # Menampilkan logo dengan lebar 100px
-st.sidebar.title("Filter Data")
-selected_provinces = st.sidebar.multiselect("Pilih Provinsi", data['PROVINSI'].unique(), default=data['PROVINSI'].unique()[:5])
-analysis_date = st.sidebar.date_input("Pilih Tanggal Analisis")
+
 
 
 # Slide awal
 st.markdown("""
-<div style="background-color: #f0f8ff; padding: 20px; border-radius: 10px;">
-    <h1 style="color: #3333cc; text-align: center;">Dashboard Analisis Data Sekolah dan APBN</h1>
+<div style="background-color: #f0f8ff; padding: 20px; border-radius: 10px; margin-botton: 100px;">
+    <h1 style="color: #3333cc; text-align: center;">Dashboard Analisis Pengaruh Anggaran APBN Di Sektor Pendidikan Terhadap Angka Putus Sekolah Di Setiap Provinsi</h1>
     <h2 style="text-align: center; color: #444;">Kelompok 3</h2>
     <ul style="list-style: none; text-align: center; padding: 0; color: #333;">
         <li><b>Amelda Nur Azzuhra</b> (210414013)</li>
@@ -25,8 +88,22 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+
+
+state_name = display_map(data)
+st.write(f'Provinsi yang dipilih: {state_name}')
+
+# Sidebar
+st.sidebar.image("school.png", width=250)  # Menampilkan logo dengan lebar 100px
+st.sidebar.title("Filter Data")
+selected_provinces = st.sidebar.multiselect("Pilih Provinsi", data['PROVINSI'].unique(), default=data['PROVINSI'].unique()[:5])
+analysis_date = date.today()
+
+# Menampilkan tanggal sebagai teks di sidebar
+st.sidebar.write(f"**Tanggal Analisis:** {analysis_date.strftime('%d-%m-%Y')}")
+
 if selected_provinces:
-    st.write(f"Analisis data untuk provinsi: **{', '.join(selected_provinces)}** pada tanggal **{analysis_date}**")
+    st.write(f"Analisis data untuk provinsi: **{', '.join(selected_provinces)}** pada tanggal **{analysis_date.strftime('%d-%m-%Y')}**")
 
 # Filter data berdasarkan provinsi yang dipilih
 filtered_data = data[data['PROVINSI'].isin(selected_provinces)]
@@ -65,6 +142,8 @@ with tab1:
     </style>
     """, unsafe_allow_html=True)
 
+    
+
     # Data Ringkasan
     total_schools = int(filtered_data.iloc[:, 3:19:4].sum().sum())  # Jumlah total sekolah
     total_students = int(filtered_data.iloc[:, 4:19:4].sum().sum())  # Jumlah total murid
@@ -93,7 +172,7 @@ with tab1:
 
     # Diagram 1: Sekolah per Jenjang
     with col1:
-        st.subheader("Jumlah Sekolah per Jenjang")
+        st.subheader("Jumlah Sekolah setiap Jenjang")
         school_levels = ["SD", "SMP", "SMA", "SMK"]
         school_counts = [
             filtered_data["Jumlah Sekolah SD"].sum(),
@@ -104,9 +183,12 @@ with tab1:
         school_data = pd.DataFrame({"Jenjang": school_levels, "Jumlah Sekolah": school_counts})
         st.bar_chart(school_data.set_index("Jenjang"))
 
+        st.empty()
+
+
     # Diagram 2: Murid per Jenjang
     with col2:
-        st.subheader("Jumlah Murid per Jenjang")
+        st.subheader("Jumlah Murid setiap Jenjang")
         student_counts = [
             filtered_data["Jumlah Murid SD"].sum(),
             filtered_data["Jumlah Murid SMP"].sum(),
@@ -115,6 +197,9 @@ with tab1:
         ]
         student_data = pd.DataFrame({"Jenjang": school_levels, "Jumlah Murid": student_counts})
         st.bar_chart(student_data.set_index("Jenjang"))
+
+        st.empty()
+
 
 
 # Tab 2: Analisis Per Jenjang Pendidikan
@@ -144,6 +229,50 @@ with tab2:
         st.caption(f"Grafik dropout untuk jenjang {jenjang}. (Data terlihat lebih jelas di diagram ini)")
     else:
         st.warning("Data dropout tidak ditemukan untuk jenjang ini.")
+
+    # Menampilkan Donut Chart untuk Dropout
+    st.write("Rasio Dropout terhadap Total Murid")
+    if dropout_column in jenjang_data.columns:
+        total_students_jenjang = jenjang_data[f"Jumlah Murid {jenjang}"].sum()
+        total_dropout_jenjang = jenjang_data[dropout_column].sum()
+        
+        # Hitung persentase dropout
+        dropout_percentage = (total_dropout_jenjang / total_students_jenjang) * 100 if total_students_jenjang > 0 else 0
+
+        # Data untuk Donut Chart hanya menunjukkan Dropout
+        labels = ["Dropout"]
+        values = [total_dropout_jenjang]
+
+        # Membuat Donut Chart dengan Plotly
+        fig = go.Figure(data=[go.Pie(
+            labels=labels,
+            values=values,
+            hole=0.7,  # Untuk menciptakan efek Donut
+            marker=dict(colors=["red"]),  # Warna Dropout merah
+            textinfo='none'  # Menghilangkan teks default (100%) pada chart
+        )])
+
+        # Tambahkan teks di tengah donut
+        fig.update_layout(
+            annotations=[dict(
+                text=f"{dropout_percentage:.2f}%",  # Menampilkan persen dropout
+                x=0.5, 
+                y=0.5, 
+                font_size=20, 
+                showarrow=False, 
+                font=dict(
+                    family="Comic Sans MS",  # Mengubah font menjadi Comic Sans
+                    size=20,  # Ukuran font
+                    color="red",  # Warna font merah
+                    style="italic"  # Membuat font miring
+                )
+            )],
+            showlegend=False  # Sembunyikan legenda
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("Data dropout tidak tersedia untuk jenjang ini.")
 
 
 # Tab 3: Input Data
@@ -175,4 +304,9 @@ with tab3:
 
 # Expander for details
 with st.expander("Detail Provinsi"):
+    # Mengganti nama index yang lama menjadi "Index"
+    filtered_data.index.name = "Index"
+    
     st.write(filtered_data)
+
+
