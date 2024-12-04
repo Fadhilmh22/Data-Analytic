@@ -1,13 +1,8 @@
 import streamlit as st
 import pandas as pd
-import altair as alt
 import plotly.graph_objects as go
-import matplotlib.pyplot as plt
-import seaborn as sns
-import json
 import folium
 from streamlit_folium import st_folium
-from babel.numbers import format_currency
 from datetime import date
 
 
@@ -70,9 +65,6 @@ def display_map(df):
 
 # Load data
 data = pd.read_csv('Dataset_APBN_2023.csv')
-
-
-
 
 # Slide awal
 st.markdown("""
@@ -226,7 +218,6 @@ with tab2:
     if dropout_column in jenjang_data.columns:
         dropout_data = jenjang_data[dropout_column]
         st.bar_chart(dropout_data, height=300)
-        st.caption(f"Grafik dropout untuk jenjang {jenjang}. (Data terlihat lebih jelas di diagram ini)")
     else:
         st.warning("Data dropout tidak ditemukan untuk jenjang ini.")
 
